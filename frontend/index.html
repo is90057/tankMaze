@@ -46,8 +46,8 @@ canvas{border-radius:8px;border:2px solid #0f3460;background:#2c3e50}
 @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
 .hidden{display:none}
 .legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:11px}
-.legend-item{display:flex;align-items:center;gap:4px}
-.legend-color{width:12px;height:12px;border-radius:2px}
+.legend-item{display:flex;align-items:center;gap:4px;white-space:nowrap}
+.legend-color{width:14px;height:14px;border-radius:2px;flex-shrink:0}
 .team-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;margin-left:4px}
 .team-alpha{background:#e94560;color:#fff}
 .team-beta{background:#3498db;color:#fff}
@@ -123,10 +123,38 @@ select{background:#0f3460;border:1px solid #1a1a4e;color:#eee;padding:6px 10px;b
         <div class="legend-item"><div class="legend-color" style="background:#1a5c2a"></div> 林</div>
         <div class="legend-item"><div class="legend-color" style="background:#c0392b"></div> 磚</div>
       </div>
+      <div class="legend" style="margin-top:0">
+        <div class="legend-item">
+          <svg width="14" height="14" viewBox="0 0 14 14">
+            <rect x="4" y="1" width="6" height="3" rx="1" fill="#f39c12"/>
+            <rect x="3" y="3" width="8" height="8" rx="1" fill="#f39c12"/>
+            <rect x="4" y="6" width="6" height="1" fill="#d4880f"/>
+            <rect x="4" y="8" width="6" height="1" fill="#d4880f"/>
+          </svg>
+          彈藥
+        </div>
+        <div class="legend-item">
+          <svg width="14" height="14" viewBox="0 0 14 14">
+            <rect x="3" y="2" width="8" height="10" rx="2" fill="#e74c3c"/>
+            <rect x="4" y="1" width="6" height="3" rx="1" fill="#c0392b"/>
+            <rect x="5" y="3" width="4" height="1" fill="#c0392b"/>
+            <rect x="5.5" y="5" width="3" height="1" fill="#c0392b"/>
+            <rect x="5.5" y="7" width="3" height="1" fill="#c0392b"/>
+          </svg>
+          燃料
+        </div>
+        <div class="legend-item">
+          <svg width="14" height="14" viewBox="0 0 14 14">
+            <path d="M7 1 C7 1 2 6.5 2 9 C2 11.5 4.5 13 7 13 C9.5 13 12 11.5 12 9 C12 6.5 7 1 7 1Z" fill="#e74c3c"/>
+            <path d="M7 3 C7 3 3.5 7.5 3.5 9.5 C3.5 11 5 12 7 12 C9 12 10.5 11 10.5 9.5 C10.5 7.5 7 3 7 3Z" fill="#ff6b6b"/>
+          </svg>
+          血量
+        </div>
+      </div>
     </div>
 
     <div class="game-area">
-      <canvas ref="canvas" width="600" height="600"></canvas>
+      <canvas ref="canvas" width="800" height="800"></canvas>
 
       <div class="status-bar" v-if="tanks.length > 0 || flags.length > 0">
         <div v-for="t in tanks" :key="t.id" class="tank-card">
@@ -392,7 +420,7 @@ createApp({
     function drawCanvas() {
       const ctx = canvas.value?.getContext('2d');
       if (!ctx) return;
-      const W = 600, H = 600;
+      const W = 800, H = 800;
 
       if (!mapData.value && !gameState.value) {
         ctx.fillStyle = '#2c3e50';
