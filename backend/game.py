@@ -51,6 +51,7 @@ class GameManager:
             "fuel": 100,
             "alive": True,
             "hidden": False,
+            "direction": "UP",
         }
         self.bot_instances[bot_id] = bot_instance
 
@@ -101,6 +102,7 @@ class GameManager:
                 if tank["fuel"] <= 0:
                     continue
                 direction = action.get("direction", "UP")
+                tank["direction"] = direction
                 dx, dy = MOVE_DELTA.get(direction, (0, 0))
                 nx, ny = tank["position"][0] + dx, tank["position"][1] + dy
                 if self._is_valid_move(nx, ny, bot_id):
@@ -123,6 +125,7 @@ class GameManager:
                 if tank["ammo"] <= 0:
                     continue
                 direction = action.get("direction", "UP")
+                tank["direction"] = direction
                 dx, dy = MOVE_DELTA.get(direction, (0, 0))
                 bx, by = tank["position"][0] + dx, tank["position"][1] + dy
                 if 0 <= bx < self.width and 0 <= by < self.height:
@@ -252,14 +255,14 @@ class GameManager:
                         "id": bid, "position": list(t["position"]),
                         "team": t["team"], "hp": t["hp"],
                         "name": t["name"], "color": t["color"],
-                        "hidden": True,
+                        "hidden": True, "direction": t.get("direction", "UP"),
                     })
             else:
                 visible_tanks.append({
                     "id": bid, "position": list(t["position"]),
                     "team": t["team"], "hp": t["hp"],
                     "name": t["name"], "color": t["color"],
-                    "hidden": False,
+                    "hidden": False, "direction": t.get("direction", "UP"),
                 })
 
         enemies = [t for t in visible_tanks if t["team"] != tank["team"]]
@@ -345,6 +348,7 @@ class GameManager:
                 "fuel": t["fuel"],
                 "alive": t["alive"],
                 "hidden": t.get("hidden", False),
+                "direction": t.get("direction", "UP"),
             })
 
         flags_info = []

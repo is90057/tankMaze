@@ -30,8 +30,9 @@ h1{font-size:24px;margin-bottom:16px;color:#e94560;text-shadow:0 0 10px rgba(233
 .game-area{position:relative}
 canvas{border-radius:8px;border:2px solid #0f3460;background:#2c3e50}
 .status-bar{display:flex;gap:12px;margin-top:12px;flex-wrap:wrap}
-.tank-card{background:#16213e;border-radius:8px;padding:10px;min-width:160px;border:1px solid #0f3460;flex:1}
-.tank-card .name{font-size:14px;font-weight:bold;margin-bottom:4px}
+.tank-card{background:#16213e;border-radius:8px;padding:10px;min-width:180px;border:1px solid #0f3460;flex:1}
+.tank-card-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.tank-card .name{font-size:14px;font-weight:bold;white-space:nowrap}
 .tank-card .stat{font-size:12px;color:#aaa;display:flex;justify-content:space-between;margin:2px 0}
 .tank-card .bar{height:6px;border-radius:3px;margin-top:2px;background:#333}
 .tank-card .bar-fill{height:100%;border-radius:3px;transition:width .3s}
@@ -129,9 +130,19 @@ select{background:#0f3460;border:1px solid #1a1a4e;color:#eee;padding:6px 10px;b
 
       <div class="status-bar" v-if="tanks.length > 0 || flags.length > 0">
         <div v-for="t in tanks" :key="t.id" class="tank-card">
-          <div class="name">
-            {{t.name}}
-            <span :class="'team-badge team-'+t.team">{{t.team}}</span>
+          <div class="tank-card-header">
+            <svg width="36" height="36" viewBox="0 0 36 36">
+              <rect x="4" y="10" width="6" height="16" rx="1.5" fill="#444"/>
+              <rect x="26" y="10" width="6" height="16" rx="1.5" fill="#444"/>
+              <ellipse cx="18" cy="18" rx="10" ry="8.5" :fill="t.color" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+              <circle cx="18" cy="18" r="4.5" fill="#555"/>
+              <rect x="16.5" y="6" width="3" height="11" rx="1" fill="#666"/>
+              <rect x="16" y="5" width="4" height="3" rx="1" fill="#888"/>
+            </svg>
+            <div class="name">
+              {{t.name}}
+              <span :class="'team-badge team-'+t.team">{{t.team}}</span>
+            </div>
           </div>
           <div v-if="!t.alive" style="color:#e94560;font-size:12px">已毀滅</div>
           <template v-if="t.alive">
@@ -227,7 +238,23 @@ createApp({
         roomId.value = data.room_id;
         playerToken.value = data.player_token;
         showToast('已加入房間: ' + data.room_id);
+        // 檢查房間是否已有地圖
+        await fetchRoomInfo();
       } catch (e) { showToast('加入失敗: ' + e.message); }
+    }
+
+    async function fetchRoomInfo() {
+      if (!roomId.value) return;
+      try {
+        const res = await fetch(`/api/room/${roomId.value}`);
+        if (res.ok) {
+          const info = await res.json();
+          if (info.has_maze) {
+            hasMaze.value = true;
+            await fetchState();
+          }
+        }
+      } catch (e) { /* ignore */ }
     }
 
     function leaveRoom() {
@@ -357,6 +384,7 @@ createApp({
           tanks.value = data.tanks || [];
           flags.value = data.flags || [];
           mapData.value = data.map;
+          if (data.map) hasMaze.value = true;
         }
       } catch (e) { /* ignore */ }
     }
@@ -444,42 +472,108 @@ createApp({
         const [tx, ty] = t.position;
         const cx = ox + tx * cellSize + cellSize/2;
         const cy = oy + ty * cellSize + cellSize/2;
-        const radius = cellSize * 0.35;
+        const s = cellSize;
+        const dir = t.direction || 'UP';
 
         ctx.save();
+
+        // shadow
+        ctx.shadowColor = 'rgba(0,0,0,0.4)';
+        ctx.shadowBlur = 6;
+        ctx.shadowOffsetY = 2;
+
+        // treads
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.fillStyle = '#3a3a3a';
+        const treadW = s * 0.14;
+        const treadH = s * 0.52;
+        const treadY = cy - treadH / 2;
+        ctx.beginPath();
+        ctx.roundRect(cx - s * 0.4, treadY, treadW, treadH, s * 0.03);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.roundRect(cx + s * 0.4 - treadW, treadY, treadW, treadH, s * 0.03);
+        ctx.fill();
+
+        // tread details (horizontal lines)
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 5; i++) {
+          const ly = cy - treadH / 2 + (i + 0.5) * (treadH / 5);
+          ctx.beginPath();
+          ctx.moveTo(cx - s * 0.4 + 2, ly);
+          ctx.lineTo(cx - s * 0.4 + treadW - 2, ly);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(cx + s * 0.4 - treadW + 2, ly);
+          ctx.lineTo(cx + s * 0.4 - 2, ly);
+          ctx.stroke();
+        }
+
+        // body
         ctx.shadowColor = t.color;
         ctx.shadowBlur = 10;
+        ctx.shadowOffsetY = 0;
         ctx.fillStyle = t.color;
         ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.ellipse(cx, cy, s * 0.3, s * 0.26, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.restore();
+        ctx.shadowBlur = 0;
 
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 2;
+        // body outline
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.ellipse(cx, cy, s * 0.3, s * 0.26, 0, 0, Math.PI * 2);
         ctx.stroke();
 
+        // turret
+        ctx.fillStyle = '#4a4a4a';
+        ctx.beginPath();
+        ctx.arc(cx, cy, s * 0.14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // barrel
+        const barrelLen = s * 0.35;
+        const barrelW = s * 0.07;
+        ctx.fillStyle = '#555';
+        ctx.save();
+        ctx.translate(cx, cy);
+        const rotMap = {UP: 0, DOWN: Math.PI, LEFT: -Math.PI / 2, RIGHT: Math.PI / 2};
+        ctx.rotate(rotMap[dir] || 0);
+        ctx.fillRect(-barrelW / 2, -barrelLen, barrelW, barrelLen);
+        // barrel tip
+        ctx.fillStyle = '#777';
+        ctx.fillRect(-barrelW / 2 - 1, -barrelLen - s * 0.04, barrelW + 2, s * 0.08);
+        ctx.restore();
+
+        ctx.restore();
+
+        // name
         ctx.fillStyle = '#fff';
-        ctx.font = '10px sans-serif';
+        ctx.font = `bold ${Math.max(9, s * 0.25)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(t.name || t.id, cx, cy - radius - 2);
+        ctx.fillText(t.name || t.id, cx, cy - s * 0.36);
 
-        ctx.textBaseline = 'top';
-        ctx.font = `bold ${cellSize*0.3}px sans-serif`;
-        ctx.fillText(t.team === 'alpha' ? 'A' : 'B', cx, cy - radius * 0.4);
-
+        // HP bar
         const hpPct = t.hp / 100;
-        const barW = cellSize * 0.6;
-        const barH = 4;
-        const barX = cx - barW/2;
-        const barY = cy - radius - 12;
-        ctx.fillStyle = '#333';
-        ctx.fillRect(barX, barY, barW, barH);
+        const barW = s * 0.55;
+        const barH = Math.max(3, s * 0.06);
+        const barX = cx - barW / 2;
+        const barY = cy - s * 0.36 - 10;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.beginPath();
+        ctx.roundRect(barX - 1, barY - 1, barW + 2, barH + 2, 2);
+        ctx.fill();
         ctx.fillStyle = hpPct > 0.5 ? '#2ecc71' : hpPct > 0.25 ? '#f39c12' : '#e74c3c';
-        ctx.fillRect(barX, barY, barW * hpPct, barH);
+        ctx.beginPath();
+        ctx.roundRect(barX, barY, barW * hpPct, barH, 1.5);
+        ctx.fill();
       }
 
       const bullets = data.bullets || [];
@@ -502,31 +596,64 @@ createApp({
         const cy = oy + fy * cellSize + cellSize/2;
         const flagColor = f.team === 'alpha' ? '#e94560' : '#3498db';
 
-        ctx.fillStyle = '#888';
-        ctx.fillRect(cx - 2, cy - cellSize*0.35, 4, cellSize*0.7);
+        // glow
+        ctx.save();
+        ctx.shadowColor = flagColor;
+        ctx.shadowBlur = 20;
+        ctx.fillStyle = 'rgba(0,0,0,0)';
+        ctx.fillRect(cx - cellSize, cy - cellSize, cellSize * 2, cellSize * 2);
+        ctx.restore();
 
+        // pole
+        ctx.fillStyle = '#ddd';
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(cx - 3, cy - cellSize * 0.5, 6, cellSize);
+
+        // flag
+        ctx.shadowBlur = 0;
         ctx.fillStyle = flagColor;
         ctx.beginPath();
-        ctx.moveTo(cx + 2, cy - cellSize*0.3);
-        ctx.lineTo(cx + cellSize*0.35, cy - cellSize*0.1);
-        ctx.lineTo(cx + 2, cy + cellSize*0.1);
+        ctx.moveTo(cx + 3, cy - cellSize * 0.45);
+        ctx.lineTo(cx + cellSize * 0.5, cy - cellSize * 0.15);
+        ctx.lineTo(cx + 3, cy + cellSize * 0.15);
+        ctx.closePath();
         ctx.fill();
 
+        // flag outline
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // label
         ctx.fillStyle = '#fff';
-        ctx.font = `bold ${cellSize*0.2}px sans-serif`;
+        ctx.font = `bold ${Math.max(10, cellSize * 0.28)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-        ctx.fillText('軍旗', cx, cy - cellSize*0.35);
+        ctx.shadowColor = 'rgba(0,0,0,0.8)';
+        ctx.shadowBlur = 4;
+        ctx.fillText(f.team === 'alpha' ? '🔴 軍旗' : '🔵 軍旗', cx, cy - cellSize * 0.55);
 
-        if (f.hp < 100) {
-          const hpPct = f.hp / 100;
-          const barW = cellSize * 0.5;
-          const barH = 3;
-          ctx.fillStyle = '#333';
-          ctx.fillRect(cx - barW/2, cy + cellSize*0.4, barW, barH);
-          ctx.fillStyle = '#e74c3c';
-          ctx.fillRect(cx - barW/2, cy + cellSize*0.4, barW * hpPct, barH);
-        }
+        // HP bar (always visible)
+        ctx.shadowBlur = 0;
+        const hpPct = Math.max(0, f.hp / 100);
+        const barW = cellSize * 0.65;
+        const barH = Math.max(4, cellSize * 0.07);
+        const barX = cx - barW / 2;
+        const barY = cy + cellSize * 0.45;
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.beginPath();
+        ctx.roundRect(barX - 1, barY - 1, barW + 2, barH + 2, 3);
+        ctx.fill();
+        ctx.fillStyle = hpPct > 0.5 ? '#2ecc71' : hpPct > 0.25 ? '#f39c12' : '#e74c3c';
+        ctx.beginPath();
+        ctx.roundRect(barX, barY, barW * hpPct, barH, 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${Math.max(8, cellSize * 0.16)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${f.hp}`, cx, barY + barH / 2);
       }
 
       if (data.game_finished) {
