@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>坦克迷宮大戰</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;background:#1a1a2e;color:#eee;min-height:100vh}
+#app{display:flex;flex-direction:column;align-items:center;padding:20px}
+h1{font-size:24px;margin-bottom:16px;color:#e94560;text-shadow:0 0 10px rgba(233,69,96,.5)}
+.container{display:flex;gap:20px;max-width:1200px;width:100%;flex-wrap:wrap;justify-content:center}
+.panel{background:#16213e;border-radius:12px;padding:16px;border:1px solid #0f3460}
+.panel h2{font-size:16px;margin-bottom:10px;color:#e94560}
+.controls{display:flex;flex-direction:column;gap:8px;min-width:280px}
+.controls label{font-size:13px;color:#aaa}
+.controls input,.controls select{background:#0f3460;border:1px solid #1a1a4e;color:#eee;padding:6px 10px;border-radius:6px;font-size:13px;width:100%}
+.controls input[type=file]{padding:4px}
+.controls .row{display:flex;gap:8px;align-items:center}
+.controls .row label{min-width:70px}
+.controls .row input{flex:1}
+.btn{background:#e94560;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;transition:all .2s}
+.btn:hover{background:#c73650;transform:translateY(-1px)}
+.btn:disabled{background:#555;cursor:not-allowed;transform:none}
+.btn.secondary{background:#0f3460}
+.btn.secondary:hover{background:#1a4a7a}
+.btn.success{background:#2ecc71}
+.btn.success:hover{background:#27ae60}
+.game-area{position:relative}
+canvas{border-radius:8px;border:2px solid #0f3460;background:#2c3e50}
+.status-bar{display:flex;gap:12px;margin-top:12px;flex-wrap:wrap}
+.tank-card{background:#16213e;border-radius:8px;padding:10px;min-width:160px;border:1px solid #0f3460;flex:1}
+.tank-card .name{font-size:14px;font-weight:bold;margin-bottom:4px}
+.tank-card .stat{font-size:12px;color:#aaa;display:flex;justify-content:space-between;margin:2px 0}
+.tank-card .bar{height:6px;border-radius:3px;margin-top:2px;background:#333}
+.tank-card .bar-fill{height:100%;border-radius:3px;transition:width .3s}
+.bar-hp{background:#e94560}
+.bar-ammo{background:#f39c12}
+.bar-fuel{background:#3498db}
+.flag-card{background:#16213e;border-radius:8px;padding:10px;border:1px solid #0f3460;flex:1;min-width:100px}
+.flag-card .name{font-size:13px;font-weight:bold}
+.game-info{font-size:13px;color:#aaa;margin-top:8px}
+.toast{position:fixed;top:20px;right:20px;background:#e94560;color:#fff;padding:12px 20px;border-radius:8px;z-index:999;animation:slideIn .3s}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+.hidden{display:none}
+.legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:11px}
+.legend-item{display:flex;align-items:center;gap:4px}
+.legend-color{width:12px;height:12px;border-radius:2px}
+.team-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;margin-left:4px}
+.team-alpha{background:#e94560;color:#fff}
+.team-beta{background:#3498db;color:#fff}
+select{background:#0f3460;border:1px solid #1a1a4e;color:#eee;padding:6px 10px;border-radius:6px;font-size:13px}
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>坦克迷宮大戰</h1>
+
+  <div class="container">
+    <div class="panel controls">
+      <h2>房間</h2>
+      <template v-if="!roomId">
+        <button class="btn success" @click="createRoom">建立房間</button>
+        <div class="row">
+          <input v-model="joinId" placeholder="房間代號" maxlength="4" style="text-transform:uppercase">
+          <button class="btn secondary" @click="joinRoom">加入</button>
+        </div>
+      </template>
+      <template v-else>
+        <div class="row"><label>房間</label><span>{{roomId}}</span></div>
+        <div class="row"><label>Token</label><span style="font-size:11px">{{playerToken}}</span></div>
+        <button class="btn secondary" @click="leaveRoom">離開房間</button>
+      </template>
+
+      <hr style="border-color:#0f3460;margin:8px 0">
+
+      <h2>地圖設定</h2>
+      <div class="row"><label>行</label><input type="number" v-model.number="rows" min="5" max="30" :disabled="hasMaze"></div>
+      <div class="row"><label>列</label><input type="number" v-model.number="cols" min="5" max="30" :disabled="hasMaze"></div>
+      <div class="row"><label>迴路</label><input type="range" v-model.number="loopFactor" min="0" max="0.5" step="0.05" :disabled="hasMaze"></div>
+      <button class="btn" @click="generateMap" :disabled="!roomId || loading || hasMaze">
+        {{loading?'生成中...':'生成地圖'}}
+      </button>
+
+      <hr style="border-color:#0f3460;margin:8px 0">
+
+      <h2>坦克控制</h2>
+      <div class="row"><label>隊伍</label>
+        <select v-model="team">
+          <option value="alpha">Alpha (紅)</option>
+          <option value="beta">Beta (藍)</option>
+        </select>
+      </div>
+      <input type="file" accept=".py" @change="onFileSelect" ref="fileInput" :disabled="!hasMaze || gameRunning">
+      <button class="btn" @click="uploadBot" :disabled="!selectedFile || !hasMaze || gameRunning || uploading">
+        {{uploading?'上傳中...':'上傳坦克腳本'}}
+      </button>
+      <div v-if="uploadedName" style="font-size:12px;color:#2ecc71">已上傳: {{uploadedName}}</div>
+
+      <hr style="border-color:#0f3460;margin:8px 0">
+
+      <h2>遊戲控制</h2>
+      <label><input type="checkbox" v-model="includeComputer" :disabled="gameRunning"> 加入電腦對手 (Beta)</label>
+      <div class="row">
+        <button class="btn success" @click="startGame" :disabled="!canStart || gameRunning">開始遊戲</button>
+        <button class="btn secondary" @click="resetGame" :disabled="!gameRunning && !gameFinished">重置</button>
+      </div>
+
+      <div class="game-info" v-if="gameState">
+        <div>回合: {{gameState.tick}}</div>
+        <div v-if="gameFinished" style="color:#e94560;font-weight:bold;font-size:16px;margin-top:8px">
+          <template v-if="winner==='draw'">平局！</template>
+          <template v-else>{{winner === 'alpha' ? '🔴 Alpha' : '🔵 Beta'}} 獲勝！</template>
+        </div>
+      </div>
+
+      <div class="legend">
+        <div class="legend-item"><div class="legend-color" style="background:#d4c9a8"></div> 路</div>
+        <div class="legend-item"><div class="legend-color" style="background:#2c3e50"></div> 牆</div>
+        <div class="legend-item"><div class="legend-color" style="background:#3498db"></div> 河</div>
+        <div class="legend-item"><div class="legend-color" style="background:#1a5c2a"></div> 林</div>
+        <div class="legend-item"><div class="legend-color" style="background:#c0392b"></div> 磚</div>
+      </div>
+    </div>
+
+    <div class="game-area">
+      <canvas ref="canvas" width="600" height="600"></canvas>
+
+      <div class="status-bar" v-if="tanks.length > 0 || flags.length > 0">
+        <div v-for="t in tanks" :key="t.id" class="tank-card">
+          <div class="name">
+            {{t.name}}
+            <span :class="'team-badge team-'+t.team">{{t.team}}</span>
+          </div>
+          <div v-if="!t.alive" style="color:#e94560;font-size:12px">已毀滅</div>
+          <template v-if="t.alive">
+            <div class="stat"><span>血量</span><span>{{t.hp}}</span></div>
+            <div class="bar"><div class="bar-fill bar-hp" :style="{width:(t.hp)+'%'}"></div></div>
+            <div class="stat"><span>彈藥</span><span>{{t.ammo}}</span></div>
+            <div class="bar"><div class="bar-fill bar-ammo" :style="{width:(t.ammo/30*100)+'%'}"></div></div>
+            <div class="stat"><span>燃料</span><span>{{t.fuel}}</span></div>
+            <div class="bar"><div class="bar-fill bar-fuel" :style="{width:(t.fuel/200*100)+'%'}"></div></div>
+          </template>
+        </div>
+
+        <div v-for="f in flags" :key="f.team" class="flag-card">
+          <div class="name">{{f.team}} 軍旗</div>
+          <div class="stat"><span>血量</span><span>{{f.hp}}</span></div>
+          <div class="bar"><div class="bar-fill" :class="f.team==='alpha'?'bar-hp':'bar-fuel'" :style="{width:(f.hp)+'%'}"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div v-if="toast" class="toast">{{toast}}</div>
+</div>
+
+<script>
+const {createApp, ref, reactive, computed, watch, onMounted, nextTick} = Vue;
+
+const TERRAIN_COLORS = {
+  0: '#d4c9a8',
+  1: '#2c3e50',
+  2: '#3498db',
+  3: '#1a5c2a',
+  4: '#c0392b',
+};
+
+createApp({
+  setup() {
+    const canvas = ref(null);
+    const roomId = ref('');
+    const playerToken = ref('');
+    const joinId = ref('');
+    const rows = ref(15);
+    const cols = ref(15);
+    const loopFactor = ref(0.15);
+    const team = ref('alpha');
+    const includeComputer = ref(true);
+    const loading = ref(false);
+    const uploading = ref(false);
+    const selectedFile = ref(null);
+    const uploadedName = ref('');
+    const hasMaze = ref(false);
+    const gameRunning = ref(false);
+    const gameFinished = ref(false);
+    const winner = ref(null);
+    const gameState = ref(null);
+    const tanks = ref([]);
+    const flags = ref([]);
+    const toast = ref('');
+    const animId = ref(null);
+    const gameTimer = ref(null);
+    const mapData = ref(null);
+
+    const canStart = computed(() => hasMaze.value && roomId.value && (uploadedName.value || includeComputer.value));
+
+    function showToast(msg) {
+      toast.value = msg;
+      setTimeout(() => toast.value = '', 3000);
+    }
+
+    async function apiPost(url, data) {
+      const form = new FormData();
+      for (const [k, v] of Object.entries(data)) form.append(k, v);
+      const res = await fetch(url, {method: 'POST', body: form});
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err);
+      }
+      return res.json();
+    }
+
+    async function createRoom() {
+      try {
+        const data = await apiPost('/api/room/create', {});
+        roomId.value = data.room_id;
+        playerToken.value = data.player_token;
+        showToast('房間已建立: ' + data.room_id);
+      } catch (e) { showToast('建立失敗: ' + e.message); }
+    }
+
+    async function joinRoom() {
+      if (!joinId.value) return;
+      try {
+        const data = await apiPost('/api/room/join', {room_id: joinId.value.toUpperCase(), name: 'Player'});
+        roomId.value = data.room_id;
+        playerToken.value = data.player_token;
+        showToast('已加入房間: ' + data.room_id);
+      } catch (e) { showToast('加入失敗: ' + e.message); }
+    }
+
+    function leaveRoom() {
+      stopGame();
+      roomId.value = '';
+      playerToken.value = '';
+      hasMaze.value = false;
+      gameState.value = null;
+      tanks.value = [];
+      flags.value = [];
+      mapData.value = null;
+      uploadedName.value = '';
+      selectedFile.value = null;
+    }
+
+    async function generateMap() {
+      if (!roomId.value) return;
+      loading.value = true;
+      try {
+        const data = await apiPost(`/api/room/${roomId.value}/map/generate`, {
+          player_token: playerToken.value,
+          rows: rows.value,
+          cols: cols.value,
+          loop_factor: loopFactor.value,
+        });
+        hasMaze.value = true;
+        showToast(`地圖已生成: ${data.width}x${data.height}`);
+        await fetchState();
+      } catch (e) { showToast('生成失敗: ' + e.message); }
+      finally { loading.value = false; }
+    }
+
+    function onFileSelect(e) {
+      selectedFile.value = e.target.files[0] || null;
+    }
+
+    async function uploadBot() {
+      if (!selectedFile.value || !roomId.value) return;
+      uploading.value = true;
+      try {
+        const form = new FormData();
+        form.append('player_token', playerToken.value);
+        form.append('file', selectedFile.value);
+        form.append('team', team.value);
+        const res = await fetch(`/api/room/${roomId.value}/bot/upload`, {method: 'POST', body: form});
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        uploadedName.value = data.name;
+        showToast('上傳成功: ' + data.name);
+        await fetchState();
+      } catch (e) { showToast('上傳失敗: ' + e.message); }
+      finally { uploading.value = false; }
+    }
+
+    async function startGame() {
+      if (!roomId.value || !playerToken.value) return;
+      try {
+        await apiPost(`/api/room/${roomId.value}/game/start`, {
+          player_token: playerToken.value,
+          include_computer: includeComputer.value,
+        });
+        gameRunning.value = true;
+        gameFinished.value = false;
+        winner.value = null;
+        showToast('遊戲開始！');
+        await fetchState();
+        startGameLoop();
+      } catch (e) { showToast('開始失敗: ' + e.message); }
+    }
+
+    function startGameLoop() {
+      stopGame();
+      gameTimer.value = setInterval(async () => {
+        if (!gameRunning.value && !gameFinished.value) return;
+        try {
+          const form = new FormData();
+          form.append('steps', 1);
+          const res = await fetch(`/api/room/${roomId.value}/game/step`, {method: 'POST', body: form});
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          gameState.value = data;
+          tanks.value = data.tanks || [];
+          flags.value = data.flags || [];
+          mapData.value = data.map;
+          gameRunning.value = data.game_running;
+          gameFinished.value = data.game_finished;
+          winner.value = data.winner;
+          if (data.game_finished) {
+            stopGame();
+            showToast(data.winner === 'draw' ? '平局！' : (data.winner + ' 獲勝！'));
+          }
+        } catch (e) {
+          stopGame();
+          showToast('遊戲錯誤: ' + e.message);
+        }
+      }, 150);
+    }
+
+    function stopGame() {
+      if (gameTimer.value) { clearInterval(gameTimer.value); gameTimer.value = null; }
+      if (animId.value) { cancelAnimationFrame(animId.value); animId.value = null; }
+    }
+
+    async function resetGame() {
+      stopGame();
+      hasMaze.value = false;
+      gameRunning.value = false;
+      gameFinished.value = false;
+      winner.value = null;
+      gameState.value = null;
+      tanks.value = [];
+      flags.value = [];
+      mapData.value = null;
+      uploadedName.value = '';
+      selectedFile.value = null;
+      const ctx = canvas.value?.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, 600, 600);
+    }
+
+    async function fetchState() {
+      if (!roomId.value) return;
+      try {
+        const res = await fetch(`/api/room/${roomId.value}/game/state`);
+        if (res.ok) {
+          const data = await res.json();
+          gameState.value = data;
+          tanks.value = data.tanks || [];
+          flags.value = data.flags || [];
+          mapData.value = data.map;
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    function drawCanvas() {
+      const ctx = canvas.value?.getContext('2d');
+      if (!ctx) return;
+      const W = 600, H = 600;
+
+      if (!mapData.value && !gameState.value) {
+        ctx.fillStyle = '#2c3e50';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#666';
+        ctx.font = '20px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('生成地圖開始遊戲', W/2, H/2);
+        return;
+      }
+
+      const data = gameState.value || {};
+      const map = mapData.value || (data.map || {});
+      const grid = map.grid;
+      if (!grid || !grid.length) {
+        ctx.fillStyle = '#2c3e50';
+        ctx.fillRect(0, 0, W, H);
+        return;
+      }
+
+      const mh = grid.length, mw = grid[0].length;
+      const cellSize = Math.min(W / mw, H / mh);
+      const ox = (W - mw * cellSize) / 2;
+      const oy = (H - mh * cellSize) / 2;
+
+      for (let y = 0; y < mh; y++) {
+        for (let x = 0; x < mw; x++) {
+          const terrain = grid[y][x];
+          ctx.fillStyle = TERRAIN_COLORS[terrain] || '#d4c9a8';
+          ctx.fillRect(ox + x * cellSize, oy + y * cellSize, cellSize, cellSize);
+
+          if (terrain === 3) {
+            ctx.fillStyle = '#2d7a3a';
+            const cx = ox + x * cellSize + cellSize/2;
+            const cy = oy + y * cellSize + cellSize/2;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - cellSize*0.3);
+            ctx.lineTo(cx - cellSize*0.2, cy + cellSize*0.2);
+            ctx.lineTo(cx + cellSize*0.2, cy + cellSize*0.2);
+            ctx.fill();
+            ctx.fillStyle = '#3a9a4a';
+            ctx.beginPath();
+            ctx.arc(cx - cellSize*0.15, cy + cellSize*0.15, cellSize*0.08, 0, Math.PI*2);
+            ctx.fill();
+          }
+          if (terrain === 2) {
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
+            for (let i = 0; i < 3; i++) {
+              const wy = oy + y * cellSize + cellSize * (0.2 + i * 0.3);
+              ctx.fillRect(ox + x * cellSize + 2, wy, cellSize - 4, 1);
+            }
+          }
+        }
+      }
+
+      const supplies = data.supplies || [];
+      for (const s of supplies) {
+        if (!s.active) continue;
+        const [sx, sy] = s.position;
+        const cx = ox + sx * cellSize + cellSize/2;
+        const cy = oy + sy * cellSize + cellSize/2;
+        ctx.fillStyle = s.type === 'ammo' ? '#f39c12' : s.type === 'fuel' ? '#e74c3c' : '#2ecc71';
+        ctx.beginPath();
+        ctx.arc(cx, cy, cellSize * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${cellSize*0.22}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const label = s.type === 'ammo' ? 'A' : s.type === 'fuel' ? 'F' : 'H';
+        ctx.fillText(label, cx, cy + 1);
+      }
+
+      const allTanks = data.tanks || [];
+      for (const t of allTanks) {
+        if (!t.alive || !t.position) continue;
+        const [tx, ty] = t.position;
+        const cx = ox + tx * cellSize + cellSize/2;
+        const cy = oy + ty * cellSize + cellSize/2;
+        const radius = cellSize * 0.35;
+
+        ctx.save();
+        ctx.shadowColor = t.color;
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = t.color;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = '#fff';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(t.name || t.id, cx, cy - radius - 2);
+
+        ctx.textBaseline = 'top';
+        ctx.font = `bold ${cellSize*0.3}px sans-serif`;
+        ctx.fillText(t.team === 'alpha' ? 'A' : 'B', cx, cy - radius * 0.4);
+
+        const hpPct = t.hp / 100;
+        const barW = cellSize * 0.6;
+        const barH = 4;
+        const barX = cx - barW/2;
+        const barY = cy - radius - 12;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(barX, barY, barW, barH);
+        ctx.fillStyle = hpPct > 0.5 ? '#2ecc71' : hpPct > 0.25 ? '#f39c12' : '#e74c3c';
+        ctx.fillRect(barX, barY, barW * hpPct, barH);
+      }
+
+      const bullets = data.bullets || [];
+      for (const b of bullets) {
+        const cx = ox + b.x * cellSize + cellSize/2;
+        const cy = oy + b.y * cellSize + cellSize/2;
+        ctx.fillStyle = '#f1c40f';
+        ctx.shadowColor = '#f1c40f';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(cx, cy, cellSize * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      const flags = data.flags || [];
+      for (const f of flags) {
+        const [fx, fy] = f.position;
+        const cx = ox + fx * cellSize + cellSize/2;
+        const cy = oy + fy * cellSize + cellSize/2;
+        const flagColor = f.team === 'alpha' ? '#e94560' : '#3498db';
+
+        ctx.fillStyle = '#888';
+        ctx.fillRect(cx - 2, cy - cellSize*0.35, 4, cellSize*0.7);
+
+        ctx.fillStyle = flagColor;
+        ctx.beginPath();
+        ctx.moveTo(cx + 2, cy - cellSize*0.3);
+        ctx.lineTo(cx + cellSize*0.35, cy - cellSize*0.1);
+        ctx.lineTo(cx + 2, cy + cellSize*0.1);
+        ctx.fill();
+
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${cellSize*0.2}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('軍旗', cx, cy - cellSize*0.35);
+
+        if (f.hp < 100) {
+          const hpPct = f.hp / 100;
+          const barW = cellSize * 0.5;
+          const barH = 3;
+          ctx.fillStyle = '#333';
+          ctx.fillRect(cx - barW/2, cy + cellSize*0.4, barW, barH);
+          ctx.fillStyle = '#e74c3c';
+          ctx.fillRect(cx - barW/2, cy + cellSize*0.4, barW * hpPct, barH);
+        }
+      }
+
+      if (data.game_finished) {
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#e94560';
+        ctx.font = 'bold 40px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const msg = data.winner === 'draw' ? '平局！' : (data.winner + ' 獲勝！');
+        ctx.fillText(msg, W/2, H/2);
+      }
+    }
+
+    function animateLoop() {
+      drawCanvas();
+      animId.value = requestAnimationFrame(animateLoop);
+    }
+
+    watch(gameState, () => {
+      drawCanvas();
+    });
+
+    onMounted(() => {
+      animateLoop();
+    });
+
+    return {
+      canvas, roomId, playerToken, joinId, rows, cols, loopFactor,
+      team, includeComputer, loading, uploading, selectedFile, uploadedName,
+      hasMaze, gameRunning, gameFinished, winner, gameState, tanks, flags, toast,
+      canStart, mapData,
+      createRoom, joinRoom, leaveRoom, generateMap, onFileSelect, uploadBot,
+      startGame, resetGame, showToast,
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
